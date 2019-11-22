@@ -4,7 +4,6 @@ import sys
 
 from os import listdir
 from os.path import isfile, join
-onlyfiles = [f for f in listdir(sys.argv[1]) if isfile(join(sys.argv[1], f))]
 
 
 # Check if all sequences have the same lenght        
@@ -51,23 +50,50 @@ def print_PHYLIP_dict(fasta_dict):
     for c,i in enumerate(list(fasta_dict.keys())):
         print(i[1:6] + '\t' +list(fasta_dict.values())[c]) 
         
-if __name__="__main__":        
+
+def get_help_and_exit(errorMsg=""):
+	help = """Usage: python Concat_alignment.py alignment_folder format > output
+	This script will concatenate all alignment in a folder and output a file in the given format.
+	Parameters:
+		alignment_folder: a folder containing all alignments file to concatenate
+		format: Format in which the concatenated alignment will be outputed. Must be fasta or phylip"""
+	if errorMsg:	
+		error = "\n----------------------------------------\nError:    "+errorMsg
+	else:
+		error=""
+	message = help+error
+
+	sys.exit(message)
+
+if __name__=="__main__":        
+    
     if len(sys.argv) < 3:
-	sys.exit('please specify a path to the folder containing the alignments and an output format: fasta or phylip')
+	if len(sys.argv)==2 and (sys.argv[1]=="--help" or sys.argv[1]=="-h"):
+		get_help_and_exit()
+	get_help_and_exit('Please specify a path to the folder containing the alignments and an output format: fasta or phylip')
 
     if sys.argv[2]!= 'fasta' and sys.argv[2]!='phylip':
-    sys.exit('please specify an output format: fasta or phylip')
+        get_help_and_exit('Please specify an output format: fasta or phylip')
 
+    onlyfiles = [f for f in listdir(sys.argv[1]) if isfile(join(sys.argv[1], f))]
 
     ## First it will go through all the files in order to get all headers
     IDs_SEQs_dict={}
+    wrongFormat= list()
     for file in onlyfiles:
+	alignFile= False
         with open(sys.argv[1] + file) as f:
             for line in f:
                 if line.startswith('>'):
+		    alignFile = True
                     if line.rstrip() not in IDs_SEQs_dict :
                         IDs_SEQs_dict[line.rstrip()] = ''
-
+	if not alignFile:
+		wrongFormat.append(file)
+    for wFile in wrongFormat:
+	onlyfiles.remove(wFile)
+    if len(onlyfiles)==0:
+	get_help_and_exit('No alignment file found. Please specify a folder containing alignment files in FASTA format.')
 
     for file in onlyfiles:  
         #print(Check_Alignment)
@@ -104,7 +130,7 @@ if __name__="__main__":
 
         
         else:
-            sys.exit('files not aligned')
+            get_help_and_exit('Non-standard alignments file. The aligned sequences do not have the same size. Please check the format of your files.')
         
         
     if sys.argv[2]=='fasta':
