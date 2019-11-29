@@ -1,139 +1,108 @@
+import logging
 import sys
+import argparse
+from Bio import AlignIO
+from Bio.Align import MultipleSeqAlignment
+from Bio.Alphabet import IUPAC, SingleLetterAlphabet
+from Bio.Seq import Seq, UnknownSeq
+from Bio.SeqRecord import SeqRecord
+from collections import defaultdict
 
-## Get all files of the path passed as argument
 
-from os import listdir
-from os.path import isfile, join
+logger = logging.getLogger("concat")
 
 
-# Check if all sequences have the same lenght        
-def Check_Alignment(file): 
-    import sys
-    seq=''
+def is_dna(msa):
+    """check whether a sequence is of type dna"""
+    allchars = {char.upper() for sr in msa for char in str(sr.seq) if char.upper() not in '-?X'}
+    return allchars.issubset(set(IUPAC.ambiguous_dna.letters))
 
-    Alignment=True
-    with open(file) as f:
-            seq=''
-            first=True
-            header=f.readline()
-            for line in f:
-                if line.startswith(">"):
-                    if first:
-                        ref_len=len(seq)
-                        first=False
-                    else:
-                        if (ref_len==len(seq)) == False:
-                            Alignment=False
 
-                    header=line
+def load_alignments(alignmentfiles, format):
+    alignments = []
+    for file in alignmentfiles:
+        try:
+            for alignment in AlignIO.parse(file, format=format):
+                logger.debug("loaded alignment of length {} from {}".format(len(alignment), file))
+                alignments.append(alignment)
+        except ValueError as e:
+            logger.error("Cannot parse input file {}: {}".format(file, e))
+            raise
+    logger.info("Successfully loaded {} alignments from {} input files"
+                .format(len(alignments), len(alignmentfiles)))
+    return alignments
 
-                    seq=''
-                else:
-                    seq=seq+line.rstrip()
 
-    if (ref_len==len(seq)) == False:
-        Alignment=False
-    return(Alignment)
+def concatenate(alignments):
+    # Get the full set of labels (i.e. sequence ids) for all the alignments
+    all_labels = set(seq.id for aln in alignments for seq in aln)
+    logger.debug("extracted {} different labels in all alignments: {}"
+                 .format(len(all_labels), all_labels))
 
-## Function to print a dictionnary in fasta format
-def print_fasta_dict(fasta_dict):
-    def insert_newlines(string, every=64):
-        return '\n'.join(string[i:i+every] for i in range(0, len(string), every))
-    
-    for c,i in enumerate(list(fasta_dict.keys())):
-        print(i)
-        print(insert_newlines(list(fasta_dict.values())[c]))
+    # Make a dictionary to store info as we go along
+    # (defaultdict is convenient -- asking for a missing key gives back an empty list)
+    concat_buf = defaultdict(list)
 
-## Function to print a dictionnary in Phylip format
-def print_PHYLIP_dict(fasta_dict):
-    print(len(fasta_dict),len(list(fasta_dict.values())[0]))
-    for c,i in enumerate(list(fasta_dict.keys())):
-        print(i[1:6] + '\t' +list(fasta_dict.values())[c]) 
-        
+    # Assume all alignments have same alphabet
+    alphabet = alignments[0]._alphabet
+    logger.debug('detected alphabet: {}'.format(alphabet))
 
-def get_help_and_exit(errorMsg=""):
-	help = """Usage: python Concat_alignment.py alignment_folder format > output
-	This script will concatenate all alignment in a folder and output a file in the given format.
-	Parameters:
-		alignment_folder: a folder containing all alignments file to concatenate
-		format: Format in which the concatenated alignment will be outputed. Must be fasta or phylip"""
-	if errorMsg:	
-		error = "\n----------------------------------------\nError:    "+errorMsg
-	else:
-		error=""
-	message = help+error
+    for aln in alignments:
+        length = aln.get_alignment_length()
 
-	sys.exit(message)
+        # check if any labels are missing in the current alignment
+        these_labels = set(rec.id for rec in aln)
+        missing = all_labels - these_labels
+        logger.debug("alignment of length {} with {} sequences, {} missing ({})"
+                     .format(length, len(these_labels), len(missing), missing))
 
-if __name__=="__main__":        
-    
-    if len(sys.argv) < 3:
-	if len(sys.argv)==2 and (sys.argv[1]=="--help" or sys.argv[1]=="-h"):
-		get_help_and_exit()
-	get_help_and_exit('Please specify a path to the folder containing the alignments and an output format: fasta or phylip')
+        # if any are missing, create unknown data of the right length,
+        # stuff the string representation into the concat_buf dict
+        for label in missing:
+            new_seq = UnknownSeq(length, alphabet=alphabet)
+            concat_buf[label].append(str(new_seq))
 
-    if sys.argv[2]!= 'fasta' and sys.argv[2]!='phylip':
-        get_help_and_exit('Please specify an output format: fasta or phylip')
+        # else stuff the string representation into the concat_buf dict
+        for rec in aln:
+            concat_buf[rec.id].append(str(rec.seq))
 
-    onlyfiles = [f for f in listdir(sys.argv[1]) if isfile(join(sys.argv[1], f))]
+    # Stitch all the substrings together using join (most efficient way),
+    # and build the Biopython data structures Seq, SeqRecord and MultipleSeqAlignment
+    msa = MultipleSeqAlignment(SeqRecord(Seq(''.join(seq_arr), alphabet=alphabet), id=label)
+                                for (label, seq_arr) in concat_buf.items())
+    logger.info("concatenated MSA of {} taxa and total length {} created"
+                .format(len(msa), len(msa[0])))
+    return msa
 
-    ## First it will go through all the files in order to get all headers
-    IDs_SEQs_dict={}
-    wrongFormat= list()
-    for file in onlyfiles:
-	alignFile= False
-        with open(sys.argv[1] + file) as f:
-            for line in f:
-                if line.startswith('>'):
-		    alignFile = True
-                    if line.rstrip() not in IDs_SEQs_dict :
-                        IDs_SEQs_dict[line.rstrip()] = ''
-	if not alignFile:
-		wrongFormat.append(file)
-    for wFile in wrongFormat:
-	onlyfiles.remove(wFile)
-    if len(onlyfiles)==0:
-	get_help_and_exit('No alignment file found. Please specify a folder containing alignment files in FASTA format.')
 
-    for file in onlyfiles:  
-        #print(Check_Alignment)
-        if Check_Alignment(sys.argv[1] + file):
-            seq=''
-            with open(sys.argv[1] + file) as f:
-    
-                header=f.readline()
-                for line in f:
-                    if line.startswith(">"):
-                        IDs_SEQs_dict[header.rstrip()] += seq
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Concatenate alignments",
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('-f', '--format-in', default='fasta',
+                        help="input format of the alignments. Any format that is understood"
+                             "by Biopython's AlignIO module is possible.")
+    parser.add_argument('-o', '--output', type=argparse.FileType('w'), default=sys.stdout,
+                        help="Path to the output file where the concatenated multiple "
+                             "sequence alignment will be written")
+    parser.add_argument('-u', '--format-output', default='phylip-relaxed',
+                        help="output format of the concatenated multiple sequence alignment")
+    parser.add_argument('-v', '--verbose', action='store_true', default=False,
+                        help="Produce some output and status reports")
+    parser.add_argument('-d', '--debug', action="store_true", default=False,
+                        help="Be more verbose for debugging purposes")
+    parser.add_argument('alignment', nargs='+', type=str,
+                        help="Path to the alignment files. Use shell expansion to pass many files "
+                             "in a simple way, e.g. \"/path/to/folder/*.fa\".")
+    conf = parser.parse_args()
 
-                        header=line
-                        seq=''
+    level = logging.WARNING
+    if conf.verbose:
+        level = logging.INFO
+    if conf.debug:
+        level = logging.DEBUG
+    logging.basicConfig(level=level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    logger.debug("Concatenate alignments: arguments: {}".format(conf))
 
-                    else:
-                        seq=seq+line.rstrip()
-
-                IDs_SEQs_dict[header.rstrip()] += seq
-            # end of fasta file
-            #now check if all seqs have the same length and add '-' to the ones which are too short
-        
-            # get the longest seq
-            ref=0
-            for i in IDs_SEQs_dict.values():
-                if len(i) > ref:
-                    ref = len(i)
-                
-            # add '-' to be equal to all other
-            for i in IDs_SEQs_dict.keys():
-                if len(IDs_SEQs_dict[i])!=ref:
-                    IDs_SEQs_dict[i]+=(ref-len(IDs_SEQs_dict[i]))*'-'
-                
-
-        
-        else:
-            get_help_and_exit('Non-standard alignments file. The aligned sequences do not have the same size. Please check the format of your files.')
-        
-        
-    if sys.argv[2]=='fasta':
-        print_fasta_dict(IDs_SEQs_dict) 
-    if sys.argv[2]=='phylip':   
-        print_PHYLIP_dict(IDs_SEQs_dict)
+    alignments = load_alignments(conf.alignment, conf.format_in.lower())
+    msa = concatenate(alignments)
+    AlignIO.write(msa, conf.output, conf.format_output.lower())
