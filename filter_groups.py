@@ -47,9 +47,9 @@ def get_matching_files(input_dir, pattern):
                 yield f
 
 
-def convert_files(input_dir, output_dir, pattern='.fa', nr_processes=None):
+def convert_files(input_dir, output_dir, min_nr_species, pattern='.fa', nr_processes=None):
     os.makedirs(output_dir, exist_ok=True)
-    args_iter = ((x.path, os.path.join(output_dir, x.name), 3) for x in get_matching_files(input_dir, pattern))
+    args_iter = ((x.path, os.path.join(output_dir, x.name), min_nr_species) for x in get_matching_files(input_dir, pattern))
     with multiprocessing.Pool(processes=nr_processes) as mp:
         logger.info("converting files in {} with {} processes in parallel"
                     .format(input_dir, nr_processes if nr_processes else os.cpu_count()))
@@ -101,4 +101,4 @@ if __name__ == "__main__":
     logging.basicConfig(level=level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     logger.debug("Concatenate alignments: arguments: {}".format(conf))
 
-    convert_files(conf.input, conf.output, pattern=conf.ext, nr_processes=conf.threads)
+    convert_files(conf.input, conf.output, conf.min_nr_species, pattern=conf.ext, nr_processes=conf.threads)
