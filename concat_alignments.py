@@ -5,19 +5,12 @@ import sys
 import argparse
 from Bio import AlignIO
 from Bio.Align import MultipleSeqAlignment
-from Bio.Alphabet import IUPAC, SingleLetterAlphabet
 from Bio.Seq import Seq, UnknownSeq
 from Bio.SeqRecord import SeqRecord
 from collections import defaultdict
 
 
 logger = logging.getLogger("concat")
-
-
-def is_dna(msa):
-    """check whether a sequence is of type dna"""
-    allchars = {char.upper() for sr in msa for char in str(sr.seq) if char.upper() not in '-?X'}
-    return allchars.issubset(set(IUPAC.ambiguous_dna.letters))
 
 
 def load_alignments(alignmentfiles, format):
@@ -45,10 +38,6 @@ def concatenate(alignments):
     # (defaultdict is convenient -- asking for a missing key gives back an empty list)
     concat_buf = defaultdict(list)
 
-    # Assume all alignments have same alphabet
-    alphabet = alignments[0]._alphabet
-    logger.debug('detected alphabet: {}'.format(alphabet))
-
     for aln in alignments:
         length = aln.get_alignment_length()
 
@@ -61,7 +50,7 @@ def concatenate(alignments):
         # if any are missing, create unknown data of the right length,
         # stuff the string representation into the concat_buf dict
         for label in missing:
-            new_seq = UnknownSeq(length, alphabet=alphabet)
+            new_seq = UnknownSeq(length, character='X')
             concat_buf[label].append(str(new_seq))
 
         # else stuff the string representation into the concat_buf dict
@@ -70,7 +59,7 @@ def concatenate(alignments):
 
     # Stitch all the substrings together using join (most efficient way),
     # and build the Biopython data structures Seq, SeqRecord and MultipleSeqAlignment
-    msa = MultipleSeqAlignment(SeqRecord(Seq(''.join(seq_arr), alphabet=alphabet), id=label)
+    msa = MultipleSeqAlignment(SeqRecord(Seq(''.join(seq_arr)), id=label)
                                 for (label, seq_arr) in concat_buf.items())
     logger.info("concatenated MSA of {} taxa and total length {} created"
                 .format(len(msa), len(msa[0])))
