@@ -8,7 +8,7 @@ import Bio.SeqIO
 import re
 import logging
 logger = logging.getLogger('filter-group')
-RE_SPECIES = re.compile("\[(?P<species>[^]]*)\].*")
+RE_SPECIES = re.compile(r"\[(?P<species>[^]]*)\][^]]*$")
 
 
 def get_species_from_header(header):
