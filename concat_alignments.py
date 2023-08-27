@@ -5,7 +5,7 @@ import sys
 import argparse
 from Bio import AlignIO
 from Bio.Align import MultipleSeqAlignment
-from Bio.Seq import Seq, UnknownSeq
+from Bio.Seq import Seq #, UnknownSeq
 from Bio.SeqRecord import SeqRecord
 from collections import defaultdict
 
@@ -50,7 +50,7 @@ def concatenate(alignments):
         # if any are missing, create unknown data of the right length,
         # stuff the string representation into the concat_buf dict
         for label in missing:
-            new_seq = UnknownSeq(length, character='X')
+            new_seq = unknown_char*length #UnknownSeq(length, character='X')
             concat_buf[label].append(str(new_seq))
 
         # else stuff the string representation into the concat_buf dict
